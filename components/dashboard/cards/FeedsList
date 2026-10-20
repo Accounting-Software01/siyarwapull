@@ -1,0 +1,593 @@
+'use client'
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import {
+  Bookmark,
+  Check,
+  ChevronDown,
+  CircleAlert,
+  Heart,
+  Loader2,
+  MessageCircle,
+  MoreHorizontal,
+  RefreshCw,
+  Search,
+  Send,
+  Share2,
+  UserPlus,
+} from 'lucide-react'
+
+export type FeedPost = {
+  id: string
+  user_id: string
+  content: string | null
+  image_url?: string | null
+  created_at: string
+  likes_count?: number | null
+  shares_count?: number | null
+  profiles?: Profile | Profile[] | null
+}
+
+type Profile = {
+  id: string
+  username: string | null
+  display_name: string | null
+  avatar_url: string | null
+}
+
+type FeedItem = FeedPost & {
+  author: Profile
+  comment_count: number
+  is_liked: boolean
+  is_following: boolean
+}
+
+type FeedsListProps = {
+  currentUserId: string
+}
+
+type LoadingState = 'loading' | 'ready' | 'error'
+
+const PAGE_SIZE = 20
+
+const fallbackProfile = (userId: string): Profile => ({
+  id: userId,
+  username: null,
+  display_name: 'Fleex member',
+  avatar_url: null,
+})
+
+const getProfile = (profiles: FeedPost['profiles'], userId: string): Profile => {
+  const profile = Array.isArray(profiles) ? profiles[0] : profiles
+  return profile ?? fallbackProfile(userId)
+}
+
+const getInitials = (profile: Profile) => {
+  const name = profile.display_name || profile.username || 'F'
+  return name
+    .split(' ')
+    .map((part) => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
+}
+
+const formatRelativeTime = (value: string) => {
+  const seconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000))
+  if (seconds < 60) return 'now'
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`
+  if (seconds < 604800) return `${Math.floor(seconds / 86400)}d`
+  return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(
+    new Date(value),
+  )
+}
+
+const formatCount = (value: number) => {
+  if (value < 1000) return String(value)
+  if (value < 1000000) return `${(value / 1000).toFixed(value >= 10000 ? 0 : 1)}k`
+  return `${(value / 1000000).toFixed(1)}m`
+}
+
+export default function FeedsList({ currentUserId }: FeedsListProps) {
+  const supabase = useMemo(() => createClient(), [])
+  const [items, setItems] = useState<FeedItem[]>([])
+  const [state, setState] = useState<LoadingState>('loading')
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [hasMore, setHasMore] = useState(true)
+  const [activeTab, setActiveTab] = useState<'for-you' | 'following'>('for-you')
+  const [busyPostIds, setBusyPostIds] = useState<Set<string>>(new Set())
+  const [busyUserIds, setBusyUserIds] = useState<Set<string>>(new Set())
+  const requestId = useRef(0)
+
+  const loadPage = useCallback(
+    async (reset = false) => {
+      const pageRequestId = ++requestId.current
+      setErrorMessage(null)
+      if (reset) setState('loading')
+
+      try {
+        const cursor = reset ? null : items[items.length - 1]?.created_at
+        let query = supabase
+          .from('user_feeds')
+          .select(
+            `
+              id,
+              user_id,
+              content,
+              image_url,
+              created_at,
+              likes_count,
+              shares_count,
+              profiles:user_id (
+                id,
+                username,
+                display_name,
+                avatar_url
+              )
+            `,
+          )
+          .order('created_at', { ascending: false })
+          .limit(PAGE_SIZE)
+
+        if (cursor) query = query.lt('created_at', cursor)
+
+        if (activeTab === 'following' && currentUserId) {
+          const { data: follows, error: followsError } = await supabase
+            .from('follows')
+            .select('following_id')
+            .eq('follower_id', currentUserId)
+
+          if (followsError) throw followsError
+          const followingIds = (follows ?? []).map((row) => row.following_id)
+          if (followingIds.length === 0) {
+            if (pageRequestId === requestId.current) {
+              setItems([])
+              setHasMore(false)
+              setState('ready')
+            }
+            return
+          }
+          query = query.in('user_id', followingIds)
+        }
+
+        const { data: postsData, error: postsError } = await query
+        if (postsError) throw postsError
+
+        const posts = (postsData ?? []) as FeedPost[]
+        const postIds = posts.map((post) => post.id)
+        const authorIds = [...new Set(posts.map((post) => post.user_id))]
+
+        const [likesResult, followsResult, commentsResult] = await Promise.all([
+          currentUserId && postIds.length > 0
+            ? supabase.from('post_likes').select('post_id').eq('user_id', currentUserId).in('post_id', postIds)
+            : Promise.resolve({ data: [], error: null }),
+          currentUserId && authorIds.length > 0
+            ? supabase
+                .from('follows')
+                .select('following_id')
+                .eq('follower_id', currentUserId)
+                .in('following_id', authorIds)
+            : Promise.resolve({ data: [], error: null }),
+          postIds.length > 0
+            ? supabase.from('post_comments').select('post_id').in('post_id', postIds)
+            : Promise.resolve({ data: [], error: null }),
+        ])
+
+        if (likesResult.error) throw likesResult.error
+        if (followsResult.error) throw followsResult.error
+        if (commentsResult.error) throw commentsResult.error
+
+        const likedIds = new Set((likesResult.data ?? []).map((row) => row.post_id))
+        const followingIds = new Set((followsResult.data ?? []).map((row) => row.following_id))
+        const commentCounts: Record<string, number> = {}
+
+        for (const comment of commentsResult.data ?? []) {
+          commentCounts[comment.post_id] = (commentCounts[comment.post_id] ?? 0) + 1
+        }
+
+        const nextItems: FeedItem[] = posts.map((post) => ({
+          ...post,
+          author: getProfile(post.profiles, post.user_id),
+          comment_count: commentCounts[post.id] ?? 0,
+          is_liked: likedIds.has(post.id),
+          is_following: followingIds.has(post.user_id),
+        }))
+
+        if (pageRequestId !== requestId.current) return
+
+        setItems((previous) => (reset ? nextItems : [...previous, ...nextItems]))
+        setHasMore(nextItems.length === PAGE_SIZE)
+        setState('ready')
+      } catch (error) {
+        if (pageRequestId !== requestId.current) return
+        console.error('Error loading Fleex feed:', error)
+        setErrorMessage('We could not load the feed. Check your connection and try again.')
+        setState('error')
+      }
+    },
+    [activeTab, currentUserId, items, supabase],
+  )
+
+  useEffect(() => {
+    setItems([])
+    setHasMore(true)
+    void loadPage(true)
+  }, [activeTab, currentUserId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const updateBusyPost = (postId: string, busy: boolean) => {
+    setBusyPostIds((previous) => {
+      const next = new Set(previous)
+      busy ? next.add(postId) : next.delete(postId)
+      return next
+    })
+  }
+
+  const updateBusyUser = (userId: string, busy: boolean) => {
+    setBusyUserIds((previous) => {
+      const next = new Set(previous)
+      busy ? next.add(userId) : next.delete(userId)
+      return next
+    })
+  }
+
+  const handleLike = async (postId: string) => {
+    if (!currentUserId || busyPostIds.has(postId)) return
+    const previous = items
+    const item = items.find((post) => post.id === postId)
+    if (!item) return
+
+    updateBusyPost(postId, true)
+    const nextLiked = !item.is_liked
+    setItems((posts) =>
+      posts.map((post) =>
+        post.id === postId
+          ? {
+              ...post,
+              is_liked: nextLiked,
+              likes_count: Math.max(0, (post.likes_count ?? 0) + (nextLiked ? 1 : -1)),
+            }
+          : post,
+      ),
+    )
+
+    const result = nextLiked
+      ? await supabase.from('post_likes').insert({ post_id: postId, user_id: currentUserId })
+      : await supabase
+          .from('post_likes')
+          .delete()
+          .eq('post_id', postId)
+          .eq('user_id', currentUserId)
+
+    if (result.error) {
+      setItems(previous)
+      setErrorMessage('Your appreciation could not be saved. Please try again.')
+    }
+    updateBusyPost(postId, false)
+  }
+
+  const handleFollow = async (userId: string) => {
+    if (!currentUserId || userId === currentUserId || busyUserIds.has(userId)) return
+    const previous = items
+    const item = items.find((post) => post.user_id === userId)
+    if (!item) return
+
+    updateBusyUser(userId, true)
+    const nextFollowing = !item.is_following
+    setItems((posts) =>
+      posts.map((post) => (post.user_id === userId ? { ...post, is_following: nextFollowing } : post)),
+    )
+
+    const result = nextFollowing
+      ? await supabase.from('follows').insert({ follower_id: currentUserId, following_id: userId })
+      : await supabase
+          .from('follows')
+          .delete()
+          .eq('follower_id', currentUserId)
+          .eq('following_id', userId)
+
+    if (result.error) {
+      setItems(previous)
+      setErrorMessage('That follow change could not be saved. Please try again.')
+    }
+    updateBusyUser(userId, false)
+  }
+
+  const handleComment = (postId: string) => {
+    window.dispatchEvent(new CustomEvent('fleex:open-comments', { detail: { postId } }))
+  }
+
+  const handleShare = async (postId: string) => {
+    const url = `${window.location.origin}/post/${postId}`
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: 'Fleex post', url })
+      } else {
+        await navigator.clipboard.writeText(url)
+        setErrorMessage('Link copied to clipboard.')
+      }
+    } catch {
+      // User cancelled the native share sheet; no error state is needed.
+    }
+  }
+
+  if (state === 'loading' && items.length === 0) return <FeedSkeleton />
+
+  if (state === 'error' && items.length === 0) {
+    return (
+      <section className="mx-auto max-w-xl px-4 py-16 text-center" role="alert">
+        <CircleAlert className="mx-auto mb-4 h-8 w-8 text-slate-500" aria-hidden="true" />
+        <h2 className="text-lg font-semibold text-[#1f2326]">The feed is taking a moment</h2>
+        <p className="mx-auto mt-2 max-w-sm text-sm text-slate-500">{errorMessage}</p>
+        <button
+          type="button"
+          onClick={() => void loadPage(true)}
+          className="mt-6 inline-flex items-center gap-2 rounded-full bg-[#1f2326] px-5 py-3 text-sm font-semibold text-white"
+        >
+          <RefreshCw className="h-4 w-4" aria-hidden="true" />
+          Try again
+        </button>
+      </section>
+    )
+  }
+
+  if (items.length === 0) {
+    return (
+      <section className="mx-auto max-w-xl px-4 py-16 text-center">
+        <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#1f2326] text-2xl text-[#b7f23a]">×</div>
+        <h2 className="text-lg font-semibold text-[#1f2326]">Nothing moving yet.</h2>
+        <p className="mx-auto mt-2 max-w-sm text-sm text-slate-500">
+          Follow a few people or share the first idea from your side of the network.
+        </p>
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new CustomEvent('fleex:open-composer'))}
+          className="mt-6 rounded-full bg-[#1f2326] px-5 py-3 text-sm font-semibold text-white"
+        >
+          Share an idea
+        </button>
+      </section>
+    )
+  }
+
+  return (
+    <main className="min-h-screen bg-[#fbfaf6] pb-24 text-[#1f2326]">
+      <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-[#fbfaf6]/95 backdrop-blur">
+        <div className="mx-auto flex max-w-xl items-center justify-between px-4 py-4">
+          <button
+            type="button"
+            aria-label="Open Fleex search"
+            onClick={() => window.dispatchEvent(new CustomEvent('fleex:open-search'))}
+            className="rounded-full p-2 hover:bg-slate-100"
+          >
+            <Search className="h-5 w-5" aria-hidden="true" />
+          </button>
+          <div className="flex items-center gap-2 text-lg font-bold tracking-tight">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#1f2326] text-xl leading-none text-white">×</span>
+            <span>Fleex</span>
+          </div>
+          <button
+            type="button"
+            aria-label="Open notifications"
+            onClick={() => window.dispatchEvent(new CustomEvent('fleex:open-notifications'))}
+            className="relative rounded-full p-2 hover:bg-slate-100"
+          >
+            <CircleAlert className="h-5 w-5" aria-hidden="true" />
+            <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-[#b7f23a]" />
+          </button>
+        </div>
+        <div className="mx-auto flex max-w-xl px-4">
+          <TabButton active={activeTab === 'for-you'} onClick={() => setActiveTab('for-you')}>
+            For You
+          </TabButton>
+          <TabButton active={activeTab === 'following'} onClick={() => setActiveTab('following')}>
+            Following
+          </TabButton>
+        </div>
+      </header>
+
+      {errorMessage && (
+        <div className="mx-auto max-w-xl px-4 pt-3 text-center text-xs text-slate-500" role="status">
+          {errorMessage}
+        </div>
+      )}
+
+      <div className="mx-auto max-w-xl space-y-4 px-4 pt-4">
+        {items.map((item) => (
+          <FeedCard
+            key={item.id}
+            item={item}
+            busyLike={busyPostIds.has(item.id)}
+            busyFollow={busyUserIds.has(item.user_id)}
+            onFollow={() => void handleFollow(item.user_id)}
+            onLike={() => void handleLike(item.id)}
+            onComment={() => handleComment(item.id)}
+            onShare={() => void handleShare(item.id)}
+          />
+        ))}
+
+        {hasMore && (
+          <button
+            type="button"
+            onClick={() => void loadPage(false)}
+            disabled={state === 'loading'}
+            className="mx-auto flex items-center gap-2 rounded-full border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-[#1f2326] disabled:opacity-50"
+          >
+            {state === 'loading' ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {state === 'loading' ? 'Loading' : 'Load more'}
+          </button>
+        )}
+      </div>
+    </main>
+  )
+}
+
+function TabButton({ active, children, onClick }: { active: boolean; children: React.ReactNode; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`relative flex-1 py-3 text-sm font-semibold ${active ? 'text-[#1f2326]' : 'text-slate-400'}`}
+      aria-selected={active}
+      role="tab"
+    >
+      {children}
+      {active && <span className="absolute inset-x-8 bottom-0 h-0.5 rounded-full bg-[#b7f23a]" />}
+    </button>
+  )
+}
+
+function FeedCard({
+  item,
+  busyLike,
+  busyFollow,
+  onFollow,
+  onLike,
+  onComment,
+  onShare,
+}: {
+  item: FeedItem
+  busyLike: boolean
+  busyFollow: boolean
+  onFollow: () => void
+  onLike: () => void
+  onComment: () => void
+  onShare: () => void
+}) {
+  const authorName = item.author.display_name || item.author.username || 'Fleex member'
+  const likes = item.likes_count ?? 0
+  const shares = item.shares_count ?? 0
+
+  return (
+    <article className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_8px_30px_rgba(31,35,38,0.06)]">
+      <div className="p-4">
+        <div className="flex items-center gap-3">
+          <Avatar profile={item.author} />
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-semibold">{authorName}</div>
+            <div className="truncate text-xs text-slate-500">
+              {item.author.username ? `@${item.author.username} · ` : ''}{formatRelativeTime(item.created_at)}
+            </div>
+          </div>
+          {!item.is_following && (
+            <button
+              type="button"
+              onClick={onFollow}
+              disabled={busyFollow}
+              className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold text-[#86b400] hover:bg-[#f0ffd1] disabled:opacity-50"
+            >
+              {busyFollow ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserPlus className="h-3.5 w-3.5" aria-hidden="true" />}
+              Follow
+            </button>
+          )}
+          <button type="button" aria-label="More post options" className="rounded-full p-1.5 text-slate-500 hover:bg-slate-100">
+            <MoreHorizontal className="h-5 w-5" aria-hidden="true" />
+          </button>
+        </div>
+
+        {item.content && <p className="mt-4 text-[1.08rem] leading-7 tracking-[-0.01em]">{item.content}</p>}
+      </div>
+
+      {item.image_url && (
+        <div className="relative overflow-hidden bg-slate-100">
+          <img src={item.image_url} alt="" className="aspect-[4/3] w-full object-cover" loading="lazy" />
+          <div className="pointer-events-none absolute right-5 top-5 h-20 w-20 opacity-70">
+            <span className="absolute left-0 top-1/2 h-0.5 w-16 rotate-45 bg-white/80" />
+            <span className="absolute left-0 top-1/2 h-0.5 w-16 -rotate-45 bg-white/80" />
+            <span className="absolute right-0 top-2 h-3 w-3 rounded-full bg-[#b7f23a]" />
+          </div>
+        </div>
+      )}
+
+      <div className="px-4 pt-3">
+        <div className="flex items-center gap-2 text-xs text-slate-500">
+          <span>{formatCount(likes)} appreciates</span>
+          <span aria-hidden="true">·</span>
+          <span>{formatCount(item.comment_count)} comments</span>
+          <span aria-hidden="true">·</span>
+          <span>{formatCount(shares)} shares</span>
+        </div>
+
+        <div className="mt-3 flex items-center gap-1 border-t border-slate-200 pt-2">
+          <ActionButton active={item.is_liked} busy={busyLike} onClick={onLike} label={item.is_liked ? 'Remove appreciation' : 'Appreciate this post'}>
+            <Heart className="h-5 w-5" fill={item.is_liked ? 'currentColor' : 'none'} aria-hidden="true" />
+            <span>Appreciate</span>
+          </ActionButton>
+          <ActionButton onClick={onComment} label={`Comment on ${authorName}'s post`}>
+            <MessageCircle className="h-5 w-5" aria-hidden="true" />
+            <span>Comment</span>
+          </ActionButton>
+          <ActionButton onClick={onShare} label="Share post">
+            <Share2 className="h-5 w-5" aria-hidden="true" />
+            <span>Share</span>
+          </ActionButton>
+          <button type="button" aria-label="Save post" className="ml-auto rounded-xl p-2.5 text-slate-600 hover:bg-slate-100">
+            <Bookmark className="h-5 w-5" aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+    </article>
+  )
+}
+
+function ActionButton({
+  children,
+  active = false,
+  busy = false,
+  label,
+  onClick,
+}: {
+  children: React.ReactNode
+  active?: boolean
+  busy?: boolean
+  label: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      aria-pressed={active}
+      onClick={onClick}
+      disabled={busy}
+      className={`inline-flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl px-2 text-xs font-semibold transition-colors disabled:opacity-60 ${
+        active ? 'text-[#8dbb00]' : 'text-slate-600 hover:bg-slate-100'
+      }`}
+    >
+      {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : children}
+    </button>
+  )
+}
+
+function Avatar({ profile }: { profile: Profile }) {
+  if (profile.avatar_url) {
+    return <img src={profile.avatar_url} alt="" className="h-11 w-11 rounded-full object-cover" />
+  }
+  return (
+    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#1f2326] text-xs font-semibold text-[#b7f23a]" aria-hidden="true">
+      {getInitials(profile)}
+    </div>
+  )
+}
+
+function FeedSkeleton() {
+  return (
+    <div className="mx-auto max-w-xl space-y-4 bg-[#fbfaf6] px-4 py-6" aria-label="Loading feed" role="status">
+      {[0, 1].map((key) => (
+        <div key={key} className="animate-pulse overflow-hidden rounded-3xl border border-slate-200 bg-white p-4">
+          <div className="flex gap-3">
+            <div className="h-11 w-11 rounded-full bg-slate-200" />
+            <div className="space-y-2">
+              <div className="h-3 w-32 rounded bg-slate-200" />
+              <div className="h-3 w-20 rounded bg-slate-200" />
+            </div>
+          </div>
+          <div className="mt-5 h-4 w-3/4 rounded bg-slate-200" />
+          <div className="mt-4 aspect-[4/3] rounded-2xl bg-slate-200" />
+          <div className="mt-4 h-10 rounded-xl bg-slate-100" />
+        </div>
+      ))}
+    </div>
+  )
+}
