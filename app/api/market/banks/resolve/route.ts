@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getUser } from '@/lib/market/auth'
-import { resolveAccount } from '@/lib/market/paystack'
+import { PaystackError, resolveAccount } from '@/lib/market/paystack'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -30,7 +30,23 @@ export async function GET(req: Request) {
   try {
     const data = await resolveAccount(accountNumber, bankCode)
     return NextResponse.json({ accountName: data.account_name })
-  } catch {
-    return NextResponse.json({ error: 'We could not verify that account.' }, { status: 422 })
+  } catch (e) {
+    const isTestKey = (process.env.PAYSTACK_SECRET_KEY ?? '').startsWith('sk_test_')
+    const status = e instanceof PaystackError ? e.status : 0
+    const reason = e instanceof Error ? e.message : 'unknown error'
+    // Visible in your hosting logs (Netlify -> Functions) so the real cause is never hidden.
+    console.error('[market] account resolve failed', { status, reason, bankCode, testKey: isTestKey })
+
+    let error = 'We could not verify that account. Check the bank and account number and try again.'
+    if (isTestKey) {
+      error = 'Account lookup is limited while Paystack is in test mode. Use a live key to verify real bank accounts.'
+    } else if (status === 401 || status === 403) {
+      error = 'Account lookup is not enabled for this Paystack account yet. Contact Paystack support to enable it.'
+    } else if (status === 429) {
+      error = 'Paystack is busy. Wait a minute and try again.'
+    } else if (status === 400 || status === 422) {
+      error = 'Paystack could not match that account number to the selected bank. Check both and try again.'
+    }
+    return NextResponse.json({ error }, { status: 422 })
   }
 }

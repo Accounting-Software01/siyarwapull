@@ -389,7 +389,8 @@ function DashboardPageInner() {
           .limit(12),
         supabase
           .from('products')
-          .select('id,title,price_kobo,stock,image_paths,created_at, stores(name,slug,state)')
+          .select('id,title,price_kobo,stock,image_paths,created_at, stores!inner(name,slug,state,payout_ready)')
+          .eq('stores.payout_ready', true)
           .eq('status', 'active')
           .gt('stock', 0)
           .order('created_at', { ascending: false })

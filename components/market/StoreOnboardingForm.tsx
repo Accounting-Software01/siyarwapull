@@ -1,14 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { CheckCircle2, Loader2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { NIGERIAN_STATES } from '@/lib/market/constants'
-
-type Bank = { name: string; code: string }
 
 function slugify(v: string) {
   return v.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
@@ -16,45 +14,14 @@ function slugify(v: string) {
 
 export default function StoreOnboardingForm() {
   const router = useRouter()
-  const [banks, setBanks] = useState<Bank[]>([])
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
   const [slugTouched, setSlugTouched] = useState(false)
   const [description, setDescription] = useState('')
   const [state, setState] = useState('')
   const [deliveryFee, setDeliveryFee] = useState('0')
-  const [bankCode, setBankCode] = useState('')
-  const [accountNumber, setAccountNumber] = useState('')
-  const [accountName, setAccountName] = useState<string | null>(null)
-  const [resolving, setResolving] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    fetch('/api/market/banks')
-      .then((r) => r.json())
-      .then((d) => setBanks(d.banks ?? []))
-      .catch(() => setError('Could not load the bank list. Refresh the page.'))
-  }, [])
-
-  // Verify the account as soon as bank + 10 digits are entered.
-  useEffect(() => {
-    setAccountName(null)
-    if (!bankCode || !/^\d{10}$/.test(accountNumber)) return
-    let cancelled = false
-    setResolving(true)
-    fetch(`/api/market/banks/resolve?account_number=${accountNumber}&bank_code=${bankCode}`)
-      .then(async (r) => ({ ok: r.ok, data: await r.json().catch(() => ({})) }))
-      .then(({ ok, data }) => {
-        if (cancelled) return
-        if (ok) setAccountName(data.accountName)
-        else setError(data.error ?? 'We could not verify that account.')
-      })
-      .finally(() => !cancelled && setResolving(false))
-    return () => {
-      cancelled = true
-    }
-  }, [bankCode, accountNumber])
 
   async function submit() {
     setError(null)
@@ -63,7 +30,7 @@ export default function StoreOnboardingForm() {
       const res = await fetch('/api/market/stores', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, slug, description, state, deliveryFee, bankCode, accountNumber }),
+        body: JSON.stringify({ name, slug, description, state, deliveryFee }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error ?? 'Could not create your store.')
@@ -74,7 +41,7 @@ export default function StoreOnboardingForm() {
     }
   }
 
-  const ready = name.trim().length >= 2 && slug.length >= 3 && state && bankCode && accountName
+  const ready = name.trim().length >= 2 && slug.length >= 3 && state
 
   return (
     <div className="space-y-3">
@@ -109,21 +76,11 @@ export default function StoreOnboardingForm() {
         <p className="mt-1 text-xs text-gray-500">A flat fee added to every order from your store.</p>
       </div>
 
-      <div className="space-y-3 rounded-xl bg-gray-50 p-3">
-        <p className="text-sm font-semibold">Where should your money go?</p>
-        <select value={bankCode} onChange={(e) => setBankCode(e.target.value)} className="h-9 w-full rounded-md border border-input bg-white px-3 text-sm" aria-label="Bank">
-          <option value="">Choose your bank…</option>
-          {banks.map((b) => <option key={`${b.code}-${b.name}`} value={b.code}>{b.name}</option>)}
-        </select>
-        <Input placeholder="10-digit account number" inputMode="numeric" maxLength={10} value={accountNumber} onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, ''))} />
-        {resolving ? <p className="flex items-center gap-1.5 text-xs text-gray-500"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking account…</p> : null}
-        {accountName ? <p className="flex items-center gap-1.5 text-sm font-medium text-green-700"><CheckCircle2 className="h-4 w-4" /> {accountName}</p> : null}
-        <p className="text-xs text-gray-500">Payments are sent to this account by Paystack after each sale. We never store your full account number.</p>
-      </div>
+      <p className="rounded-xl bg-gray-50 p-3 text-xs text-gray-600">Next step: you will add your payout account (where your money goes) right after your store is created.</p>
 
       {error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
       <Button onClick={submit} disabled={busy || !ready} className="w-full" size="lg">
-        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Submit store for review
+        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Create my store
       </Button>
     </div>
   )

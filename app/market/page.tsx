@@ -26,7 +26,8 @@ export default async function MarketPage({
   const supabase = await createClient()
   let query = supabase
     .from('products')
-    .select('id,title,price_kobo,image_paths,stores(name,state)')
+    .select('id,title,price_kobo,image_paths,stores!inner(name,state,payout_ready)')
+    .eq('stores.payout_ready', true)
     .eq('status', 'active')
     .gt('stock', 0)
     .order('created_at', { ascending: false })
