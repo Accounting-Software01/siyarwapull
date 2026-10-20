@@ -59,7 +59,7 @@ const formatCount = (value: number) => {
 
 const getProfile = (profiles: FeedPost['profiles'], userId: string): Profile => {
   const profile = Array.isArray(profiles) ? profiles[0] : profiles
-  return profile ?? { id: userId, display_name: 'Fleex member', username: null, avatar_url: null }
+  return profile ?? { id: userId, display_name: 'Siyarwa Pull member', username: null, avatar_url: null }
 }
 
 const getInitials = (profile: Profile) => {
@@ -95,7 +95,7 @@ const getPostMediaUrls = (post: FeedPost): string[] => {
 
 export default function FeedCard({ post, isFollowing, isLiked, commentCount, onFollow, onLike, onComment, onShare, isLikePending = false, isFollowPending = false }: FeedCardProps) {
   const profile = getProfile(post.profiles, post.user_id)
-  const authorName = profile.display_name || profile.username || 'Fleex member'
+  const authorName = profile.display_name || profile.username || 'Siyarwa Pull member'
   const likesCount = Math.max(0, post.likes_count ?? 0)
   const sharesCount = Math.max(0, post.shares_count ?? 0)
   const mediaUrls = getPostMediaUrls(post)
@@ -137,7 +137,7 @@ export default function FeedCard({ post, isFollowing, isLiked, commentCount, onF
       {mediaType === 'image' && mediaUrls.length > 0 && <MediaGallery urls={mediaUrls} activeImage={activeImage} setActiveImage={setActiveImage} onOpen={() => setLightboxOpen(true)} />}
       {mediaType === 'video' && mediaUrl && <div className="relative mx-0 overflow-hidden rounded-none bg-[#1f2326]"><video ref={videoRef} src={mediaUrl} className="max-h-[600px] min-h-[280px] w-full object-contain" autoPlay muted={videoMuted} loop playsInline /><button type="button" onClick={() => setVideoMuted((muted) => !muted)} className="absolute bottom-3 right-3 rounded-full bg-[#1f2326] px-3 py-1.5 text-xs font-semibold text-white">{videoMuted ? 'Unmute' : 'Mute'}</button></div>}
 
-      <div className="px-5 pb-4 pt-5 sm:px-7 sm:pb-5 sm:pt-6"><div className="flex items-center gap-2 text-[0.98rem] text-[#7d8387]"><span>{formatCount(likesCount)} appreciates</span><span aria-hidden="true">•</span><span>{formatCount(commentCount)} comments</span><span aria-hidden="true">•</span><span>{formatCount(sharesCount)} shares</span></div><div className="mt-5 flex min-w-0 items-center border-t border-[#d9d9d4] pt-4"><ActionButton active={isLiked} disabled={isLikePending} label={isLiked ? 'Remove appreciation' : 'Appreciate this post'} onClick={onLike}>{isLikePending ? <Loader2 className="h-6 w-6 animate-spin" aria-hidden="true" /> : <Heart className="h-6 w-6" fill={isLiked ? 'currentColor' : 'none'} aria-hidden="true" />}<span className="min-w-0 truncate">Appreciate</span></ActionButton><ActionButton label="Comment on this post" onClick={onComment}><MessageCircle className="h-6 w-6" aria-hidden="true" /><span className="min-w-0 truncate">Comment</span></ActionButton><ActionButton label="Share this post" onClick={onShare}><Share2 className="h-6 w-6" aria-hidden="true" /><span className="min-w-0 truncate">Share</span></ActionButton><button type="button" aria-label="Save post" className="ml-1 shrink-0 rounded-xl p-2.5 text-[#14181c] transition-colors hover:bg-[#efefea]"><Bookmark className="h-6 w-6" aria-hidden="true" /></button></div></div>
+      <div className="px-5 pb-1.5 pt-3 sm:px-7 sm:pb-2 sm:pt-4"><div className="flex items-center gap-2 text-[0.8rem] text-[#7d8387]"><span>{formatCount(likesCount)} appreciates</span><span aria-hidden="true">•</span><span>{formatCount(commentCount)} comments</span><span aria-hidden="true">•</span><span>{formatCount(sharesCount)} shares</span></div><div className="mt-2.5 flex min-w-0 items-center border-t border-[#d9d9d4] pt-1"><ActionButton active={isLiked} disabled={isLikePending} label={isLiked ? 'Remove appreciation' : 'Appreciate this post'} onClick={onLike}>{isLikePending ? <Loader2 className="h-[18px] w-[18px] animate-spin" aria-hidden="true" /> : <Heart className="h-[18px] w-[18px]" fill={isLiked ? 'currentColor' : 'none'} aria-hidden="true" />}<span className="min-w-0 truncate">Appreciate</span></ActionButton><ActionButton label="Comment on this post" onClick={onComment}><MessageCircle className="h-[18px] w-[18px]" aria-hidden="true" /><span className="min-w-0 truncate">Comment</span></ActionButton><ActionButton label="Share this post" onClick={onShare}><Share2 className="h-[18px] w-[18px]" aria-hidden="true" /><span className="min-w-0 truncate">Share</span></ActionButton><button type="button" aria-label="Save post" className="ml-1 shrink-0 rounded-xl p-2 text-[#14181c] transition-colors hover:bg-[#efefea]"><Bookmark className="h-[18px] w-[18px]" aria-hidden="true" /></button></div></div>
     </article>
     {lightboxOpen && mediaUrls.length > 0 && (
       <ImageLightbox
@@ -188,4 +188,4 @@ function ImageLightbox({ urls, activeImage, setActiveImage, onClose }: { urls: s
 
 function Avatar({ profile }: { profile: Profile }) { return profile.avatar_url ? <img src={profile.avatar_url} alt="" className="h-14 w-14 shrink-0 rounded-full object-cover" /> : <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#1f2326] text-sm font-semibold text-[#b7f23a]" aria-hidden="true">{getInitials(profile)}</div> }
 
-function ActionButton({ active = false, disabled = false, label, onClick, children }: { active?: boolean; disabled?: boolean; label: string; onClick: () => void; children: ReactNode }) { return <button type="button" aria-label={label} aria-pressed={active} disabled={disabled} onClick={onClick} className={`inline-flex min-h-12 min-w-0 flex-1 items-center justify-center gap-1 overflow-hidden border-r border-[#d9d9d4] px-1 text-[0.95rem] font-semibold transition-colors last:border-r-0 disabled:opacity-50 ${active ? 'text-[#9ac500]' : 'text-[#14181c] hover:bg-[#efefea]'}`}>{children}</button> }
+function ActionButton({ active = false, disabled = false, label, onClick, children }: { active?: boolean; disabled?: boolean; label: string; onClick: () => void; children: ReactNode }) { return <button type="button" aria-label={label} aria-pressed={active} disabled={disabled} onClick={onClick} className={`inline-flex min-h-10 min-w-0 flex-1 items-center justify-center gap-1.5 overflow-hidden border-r border-[#d9d9d4] px-1 text-[0.78rem] font-semibold transition-colors last:border-r-0 disabled:opacity-50 ${active ? 'text-[#9ac500]' : 'text-[#14181c] hover:bg-[#efefea]'}`}>{children}</button> }

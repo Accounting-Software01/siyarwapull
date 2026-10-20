@@ -13,7 +13,7 @@ import './globals.css'
 // reaching fonts.googleapis.com — more reliable in CI/offline environments.
 
 export const metadata: Metadata = {
-  title: 'Siyarwa Pull - Build Your Identity, Share Your World',
+  title: 'Siyarwa Pull (Beta) - Build Your Identity, Share Your World',
   description: 'Siyarwa Pull is where creators build a Face, forge portfolios, blogs, shops, and short videos, buy and sell on the marketplace, and get discovered through Spark.',
   generator: 'Pull Foward - Arham & Brothers Ltd',
   manifest: '/manifest.webmanifest',

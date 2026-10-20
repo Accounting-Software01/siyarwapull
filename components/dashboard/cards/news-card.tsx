@@ -396,8 +396,8 @@ export default function NewsCard({
           </div>
         </div>
 
-        <div className="px-5 pb-4 pt-5 sm:px-7 sm:pb-5 sm:pt-6">
-          <div className="flex items-center gap-2 text-[0.98rem] text-[#7d8387]">
+        <div className="px-5 pb-1.5 pt-3 sm:px-7 sm:pb-2 sm:pt-4">
+          <div className="flex items-center gap-2 text-[0.8rem] text-[#7d8387]">
             <span>{formatCount(likesCount)} appreciates</span>
             <span aria-hidden="true">•</span>
             <span>{formatCount(localCommentCount)} comments</span>
@@ -405,28 +405,28 @@ export default function NewsCard({
             <span>{formatCount(sharesCount)} shares</span>
           </div>
 
-          <div className="mt-5 flex min-w-0 items-center border-t border-[#d9d9d4] pt-4">
+          <div className="mt-2.5 flex min-w-0 items-center border-t border-[#d9d9d4] pt-1">
             <ActionButton
               active={isLiked}
               label={isLiked ? 'Remove appreciation' : 'Appreciate this news'}
               onClick={onLike}
             >
-              <Heart className="h-6 w-6" fill={isLiked ? 'currentColor' : 'none'} aria-hidden="true" />
+              <Heart className="h-[18px] w-[18px]" fill={isLiked ? 'currentColor' : 'none'} aria-hidden="true" />
               <span className="min-w-0 truncate">Appreciate</span>
             </ActionButton>
 
             <ActionButton label="Comment on this news" onClick={onComment}>
-              <MessageCircle className="h-6 w-6" aria-hidden="true" />
+              <MessageCircle className="h-[18px] w-[18px]" aria-hidden="true" />
               <span className="min-w-0 truncate">Comment</span>
             </ActionButton>
 
             <ActionButton label="Share this news" onClick={onShare}>
-              {shareCopied ? <Check className="h-6 w-6" aria-hidden="true" /> : <Share2 className="h-6 w-6" aria-hidden="true" />}
+              {shareCopied ? <Check className="h-[18px] w-[18px]" aria-hidden="true" /> : <Share2 className="h-[18px] w-[18px]" aria-hidden="true" />}
               <span className="min-w-0 truncate">{shareCopied ? 'Copied' : 'Share'}</span>
             </ActionButton>
 
             <ActionButton active={isSaved} label={isSaved ? 'Remove saved article' : 'Save this article'} onClick={onSave}>
-              <Bookmark className="h-6 w-6" fill={isSaved ? 'currentColor' : 'none'} aria-hidden="true" />
+              <Bookmark className="h-[18px] w-[18px]" fill={isSaved ? 'currentColor' : 'none'} aria-hidden="true" />
               <span className="min-w-0 truncate">{isSaved ? 'Saved' : 'Save'}</span>
             </ActionButton>
 
@@ -434,9 +434,9 @@ export default function NewsCard({
               type="button"
               aria-label="Read this news inside the app"
               onClick={onReadInside}
-              className="ml-1 shrink-0 rounded-xl p-2.5 text-[#14181c] transition-colors hover:bg-[#efefea]"
+              className="ml-1 shrink-0 rounded-xl p-2 text-[#14181c] transition-colors hover:bg-[#efefea]"
             >
-              <ExternalLink className="h-6 w-6" aria-hidden="true" />
+              <ExternalLink className="h-[18px] w-[18px]" aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -497,7 +497,7 @@ function ActionButton({
       aria-label={label}
       aria-pressed={active}
       onClick={onClick}
-      className={`inline-flex min-h-12 min-w-0 flex-1 items-center justify-center gap-1 overflow-hidden border-r border-[#d9d9d4] px-1 text-[0.95rem] font-semibold transition-colors last:border-r-0 ${
+      className={`inline-flex min-h-10 min-w-0 flex-1 items-center justify-center gap-1.5 overflow-hidden border-r border-[#d9d9d4] px-1 text-[0.78rem] font-semibold transition-colors last:border-r-0 ${
         active ? 'text-[#9ac500]' : 'text-[#14181c] hover:bg-[#efefea]'
       }`}
     >

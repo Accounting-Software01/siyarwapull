@@ -19,7 +19,7 @@ import EmptyFeed from '@/components/dashboard/layout/empty-feed'
 import NewsCard from '@/components/dashboard/cards/news-card'
 import ForgeFeedCard from '@/components/dashboard/cards/forge-feed-card'
 import VideoFeedCard, { type VideoFeedItem } from '@/components/dashboard/cards/video-feed-card'
-import ProductFeedCard, { type ProductFeedItem } from '@/components/dashboard/cards/product-feed-card'
+import { ProductStrip, ProductGrid, type ProductFeedItem } from '@/components/dashboard/cards/product-blocks'
 import FeedCard from '@/components/dashboard/cards/feed-card'
 import CardSkeleton from '@/components/dashboard/cards/card-skeleton'
 import CommentPanel from '@/components/dashboard/comments/comment-panel'
@@ -311,14 +311,33 @@ function DashboardPageInner() {
     | { kind: 'forge'; key: string; forge: any }
     | { kind: 'post'; key: string; post: any }
     | { kind: 'video'; key: string; video: VideoFeedItem }
-    | { kind: 'product'; key: string; product: ProductFeedItem }
+    | { kind: 'productStrip'; key: string; products: ProductFeedItem[] }
+    | { kind: 'productGrid'; key: string; products: ProductFeedItem[] }
   const mixedAll: MixedItem[] = (() => {
     const q = {
       news: newsItems.map((article, newsIndex): MixedItem => ({ kind: 'news', key: `n-${article.id}`, article, newsIndex })),
       forge: feedItems.map((forge): MixedItem => ({ kind: 'forge', key: `f-${forge.id}`, forge })),
       post: discoverPosts.map((post): MixedItem => ({ kind: 'post', key: `p-${post.id}`, post })),
       video: discoverVideos.map((video): MixedItem => ({ kind: 'video', key: `v-${video.id}`, video })),
-      product: discoverProducts.map((product): MixedItem => ({ kind: 'product', key: `m-${product.id}`, product })),
+      // Hybrid product layout: a swipeable strip of 6, then a grid of 4, repeating.
+      product: (() => {
+        const blocks: MixedItem[] = []
+        let i = 0
+        let asStrip = true
+        while (i < discoverProducts.length) {
+          const size = asStrip ? 6 : 4
+          const chunk = discoverProducts.slice(i, i + size)
+          if (chunk.length === 0) break
+          blocks.push(
+            asStrip
+              ? { kind: 'productStrip', key: `ms-${chunk[0].id}`, products: chunk }
+              : { kind: 'productGrid', key: `mg-${chunk[0].id}`, products: chunk }
+          )
+          i += size
+          asStrip = !asStrip
+        }
+        return blocks
+      })(),
     }
     // Rotation keeps variety: products and clips surface early, news fills the gaps.
     const cycle: (keyof typeof q)[] = ['post', 'product', 'news', 'forge', 'video', 'post', 'news', 'product', 'forge', 'video']
@@ -374,7 +393,7 @@ function DashboardPageInner() {
           .eq('status', 'active')
           .gt('stock', 0)
           .order('created_at', { ascending: false })
-          .limit(12),
+          .limit(20),
       ])
       if (cancelled) return
       if (postsRes.error) console.warn('[Feed] posts unavailable:', postsRes.error.message)
@@ -838,6 +857,7 @@ function DashboardPageInner() {
                           />
                         )}
                         {item.kind === 'post' && (
+                          <div className="-mx-5 w-[calc(100%+2.5rem)] sm:mx-0 sm:w-full">
                           <FeedCard
                             post={item.post}
                             isFollowing={following.has(item.post.user_id)}
@@ -850,9 +870,11 @@ function DashboardPageInner() {
                             onShare={() => handleShare(`${typeof window !== 'undefined' ? window.location.origin : ''}/post/${item.post.id}`, item.post.id)}
                             onTagClick={handleTagClick}
                           />
+                          </div>
                         )}
                         {item.kind === 'video' && <VideoFeedCard video={item.video} />}
-                        {item.kind === 'product' && <ProductFeedCard product={item.product} />}
+                        {item.kind === 'productStrip' && <ProductStrip products={item.products} />}
+                        {item.kind === 'productGrid' && <ProductGrid products={item.products} />}
                         {people.length > 0 && (
                           <SuggestedAllies
                             users={people}
