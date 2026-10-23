@@ -16,6 +16,8 @@ export default function PayoutForm({ ready }: { ready: boolean }) {
   const [bankCode, setBankCode] = useState('')
   const [accountNumber, setAccountNumber] = useState('')
   const [accountName, setAccountName] = useState<string | null>(null)
+  const [unavailable, setUnavailable] = useState(false)
+  const [confirmed, setConfirmed] = useState(false)
   const [resolving, setResolving] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -31,6 +33,8 @@ export default function PayoutForm({ ready }: { ready: boolean }) {
   // Show the account holder's name as soon as bank + 10 digits are entered.
   useEffect(() => {
     setAccountName(null)
+    setUnavailable(false)
+    setConfirmed(false)
     if (!bankCode || !/^\d{10}$/.test(accountNumber)) return
     let cancelled = false
     setResolving(true)
@@ -39,7 +43,8 @@ export default function PayoutForm({ ready }: { ready: boolean }) {
       .then(async (r) => ({ ok: r.ok, data: await r.json().catch(() => ({})) }))
       .then(({ ok, data }) => {
         if (cancelled) return
-        if (ok) setAccountName(data.accountName)
+        if (ok && data.unavailable) setUnavailable(true)
+        else if (ok) setAccountName(data.accountName)
         else setError(data.error ?? 'We could not verify that account.')
       })
       .finally(() => !cancelled && setResolving(false))
@@ -55,7 +60,7 @@ export default function PayoutForm({ ready }: { ready: boolean }) {
       const res = await fetch('/api/market/stores/payout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bankCode, accountNumber }),
+        body: JSON.stringify({ bankCode, accountNumber, confirmedManually: unavailable && confirmed }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error ?? 'Could not save your payout account.')
@@ -92,10 +97,16 @@ export default function PayoutForm({ ready }: { ready: boolean }) {
       <Input placeholder="10-digit account number" inputMode="numeric" maxLength={10} value={accountNumber} onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, ''))} />
       {resolving ? <p className="flex items-center gap-1.5 text-xs text-gray-500"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking account…</p> : null}
       {accountName ? <p className="flex items-center gap-1.5 text-sm font-medium text-green-700"><CheckCircle2 className="h-4 w-4" /> {accountName}</p> : null}
+      {unavailable ? (
+        <label className="flex items-start gap-2 rounded-xl bg-amber-50 p-3 text-xs text-amber-900">
+          <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} className="mt-0.5" />
+          <span>We could not look up the account holder&apos;s name automatically. I have double-checked the bank and account number, and I understand payouts go to this account.</span>
+        </label>
+      ) : null}
       <p className="text-xs text-gray-500">Paystack sends your sales to this account. We never store your full account number.</p>
       {error ? <p role="alert" className="text-sm text-red-600">{error}</p> : null}
       <div className="flex gap-2">
-        <Button onClick={submit} disabled={busy || !bankCode || !accountName} className="flex-1" size="lg">
+        <Button onClick={submit} disabled={busy || !bankCode || !/^\d{10}$/.test(accountNumber) || !(accountName || (unavailable && confirmed))} className="flex-1" size="lg">
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Save payout account
         </Button>
         {ready ? <Button type="button" variant="outline" size="lg" onClick={() => setEditing(false)}>Cancel</Button> : null}

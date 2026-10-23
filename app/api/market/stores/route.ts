@@ -61,8 +61,21 @@ export async function POST(req: Request) {
     if (insertError?.code === '23505') {
       return NextResponse.json({ error: 'That store link is taken. Try another.' }, { status: 409 })
     }
+    // The real reason is logged on the server (hosting logs) and a safe code is returned for debugging.
     console.error('[market] store insert failed', insertError)
-    return NextResponse.json({ error: 'Could not create your store.' }, { status: 500 })
+    const code = insertError?.code ?? 'unknown'
+    const msg = insertError?.message ?? ''
+    let error = 'Could not create your store.'
+    if (code === '42P01' || code === 'PGRST205' || /schema cache|does not exist/i.test(msg)) {
+      error = 'The marketplace database is not set up yet. The admin needs to run the market migration (and reload the schema).'
+    } else if (code === '23503') {
+      error = 'Your profile record could not be found. Sign out, sign back in, and finish your profile first.'
+    } else if (/invalid api key|jwt/i.test(msg)) {
+      error = 'The server is missing a valid Supabase service key. The admin needs to check SUPABASE_SERVICE_ROLE_KEY.'
+    } else if (code === '23514') {
+      error = 'One of the store details is not allowed. Check the name, link, state and delivery fee.'
+    }
+    return NextResponse.json({ error, code }, { status: 500 })
   }
 
   return NextResponse.json({ ok: true, status: 'pending' })

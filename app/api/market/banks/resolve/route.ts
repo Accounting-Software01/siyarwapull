@@ -37,12 +37,14 @@ export async function GET(req: Request) {
     // Visible in your hosting logs (Netlify -> Functions) so the real cause is never hidden.
     console.error('[market] account resolve failed', { status, reason, bankCode, testKey: isTestKey })
 
+    // Lookup itself is unavailable (test mode, or not enabled on the Paystack account).
+    // This is not the seller's fault, so the form lets them confirm the details manually.
+    if (isTestKey || status === 401 || status === 403) {
+      return NextResponse.json({ accountName: null, unavailable: true })
+    }
+
     let error = 'We could not verify that account. Check the bank and account number and try again.'
-    if (isTestKey) {
-      error = 'Account lookup is limited while Paystack is in test mode. Use a live key to verify real bank accounts.'
-    } else if (status === 401 || status === 403) {
-      error = 'Account lookup is not enabled for this Paystack account yet. Contact Paystack support to enable it.'
-    } else if (status === 429) {
+    if (status === 429) {
       error = 'Paystack is busy. Wait a minute and try again.'
     } else if (status === 400 || status === 422) {
       error = 'Paystack could not match that account number to the selected bank. Check both and try again.'

@@ -12,6 +12,7 @@ export async function getUser() {
 
 export async function isMarketAdmin(userId: string): Promise<boolean> {
   const admin = createAdminClient()
-  const { data } = await admin.from('marketplace_admins').select('user_id').eq('user_id', userId).maybeSingle()
+  const { data, error } = await admin.from('marketplace_admins').select('user_id').eq('user_id', userId).maybeSingle()
+  if (error) console.error('[market] admin check failed (is SUPABASE_SERVICE_ROLE_KEY valid and the migration run?)', error.message)
   return Boolean(data)
 }

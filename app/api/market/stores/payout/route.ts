@@ -52,8 +52,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'This store cannot be changed. Please contact support.' }, { status: 403 })
   }
 
+  const confirmedManually = body.confirmedManually === true
   try {
-    const accountName = (await resolveAccount(accountNumber, bankCode)).account_name
+    let accountName: string | null = null
+    try {
+      accountName = (await resolveAccount(accountNumber, bankCode)).account_name
+    } catch (lookupError) {
+      const lookupStatus = lookupError instanceof PaystackError ? lookupError.status : 0
+      const lookupUnavailable = (process.env.PAYSTACK_SECRET_KEY ?? '').startsWith('sk_test_') || lookupStatus === 401 || lookupStatus === 403
+      // Only when the lookup service itself is unavailable AND the seller confirmed the details.
+      if (!(lookupUnavailable && confirmedManually)) throw lookupError
+      console.warn('[market] payout saved without name verification', { store: store.slug })
+    }
     const sub = await createSubaccount({
       businessName: store.name,
       bankCode,
