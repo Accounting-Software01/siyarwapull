@@ -85,12 +85,15 @@ export async function POST(req: Request) {
   } catch (e) {
     const isTestKey = (process.env.PAYSTACK_SECRET_KEY ?? '').startsWith('sk_test_')
     const status = e instanceof PaystackError ? e.status : 0
+    const detail = e instanceof PaystackError ? e.message : ''
     console.error('[market] payout setup failed', { status, reason: e instanceof Error ? e.message : 'unknown', testKey: isTestKey })
+    // Paystack's own message is not secret; showing it makes beta debugging possible without server logs.
+    const said = detail ? ` Paystack said: "${detail}"` : ''
     const error = isTestKey
-      ? 'Payout setup is limited while Paystack is in test mode. Use a live Paystack key to add a real bank account.'
+      ? `Payout setup is limited while Paystack is in test mode. Use a live Paystack key to add a real bank account.${said}`
       : status === 401 || status === 403
-        ? 'Payout setup is not enabled for this Paystack account yet. Contact Paystack support.'
-        : 'We could not set up payouts for that account. Check the bank and account number and try again.'
+        ? `Paystack refused the request (HTTP ${status}).${said}`
+        : `We could not set up payouts for that account. Check the bank and account number and try again.${said}`
     return NextResponse.json({ error }, { status: 422 })
   }
 }
